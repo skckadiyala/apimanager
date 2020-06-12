@@ -1,0 +1,10 @@
+{ 
+	"name": "Ant Man", 
+	"description": "Ant Man is an Avenger", 
+	"email": "antman@postmanpat.com", 
+	"phone": "1800 4445 8669", 
+	"role": "user", 
+	"loginName":"antman",
+	"enabled": true, 
+	"image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAAA1BMVEWvqiFt32O6AAAADElEQVQImWNgIA0AAAAwAAFDlLdnAAAAAElFTkSuQmCC" 
+	}
