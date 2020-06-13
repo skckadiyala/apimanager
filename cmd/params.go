@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"os"
 	"text/tabwriter"
@@ -17,14 +19,21 @@ var (
 	orgName      string
 	appName      string
 	keyID        string
+	oauthID      string
 	name         string
 	password     string
 	apiName      string
+	userName     string
+	userRole     string
+	loginName    string
 	security     string
 	resourcePath string
 	certPath     string
 	proxyState   string
 	proxyVersion string
+	image        string
+	enabled      bool
+	development  bool
 )
 
 type configAPI struct {
@@ -55,4 +64,14 @@ func fmtDisplay() *tabwriter.Writer {
 	writeTab := new(tabwriter.Writer)
 	writeTab.Init(os.Stdout, 0, 8, 0, '\t', 0)
 	return writeTab
+}
+
+func getUniqueID(nbofBytes int) string {
+	b := make([]byte, nbofBytes)
+	_, err := rand.Read(b)
+	if err != nil {
+		fmt.Println("Error generating uniqueID: %v ", err)
+	}
+	uuid := fmt.Sprintf("%x", b[0:nbofBytes])
+	return uuid
 }

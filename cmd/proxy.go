@@ -40,6 +40,11 @@ For example:
 # Create proxy using the data 
 apimanager create proxy -f proxy.json
 apimanager create proxy -n <name> -a 'Backend API' -o <orgName> -s passthrough`,
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if security != "passthrough" {
+				cmd.MarkFlagRequired("appName")
+			}
+		},
 		Run: createProxy,
 	}
 	proxyList = &cobra.Command{
@@ -75,57 +80,47 @@ func init() {
 	proxyDelete.MarkFlagRequired("name")
 
 	proxyCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the swagger api to be stored")
-	if file == "" {
-		proxyCmd.Flags().StringVarP(&name, "name", "n", "", "proxy name")
-		proxyCmd.MarkFlagRequired("name")
-		proxyCmd.Flags().StringVarP(&orgName, "orgName", "o", "", "organization name")
-		proxyCmd.MarkFlagRequired("orgName")
-		proxyCmd.Flags().StringVarP(&apiName, "apiName", "a", "", "backend API name")
-		proxyCmd.MarkFlagRequired("apiName")
-		proxyCmd.Flags().StringVarP(&security, "security", "s", "", "provide the security to use for proxy: \napikey \nhttpbasic \noauth \npassthrough")
-		proxyCmd.MarkFlagRequired("security")
 
-		proxyCmd.Flags().StringVarP(&resourcePath, "resourcePath", "r", "", "provide the resource path for the proxy")
-		proxyCmd.Flags().StringVarP(&certPath, "certPath", "c", "", "provide the location of the backend api cert")
+	proxyCmd.Flags().StringVarP(&name, "name", "n", "", "proxy name")
+	proxyCmd.MarkFlagRequired("name")
+	proxyCmd.Flags().StringVarP(&orgName, "orgName", "o", "", "organization name")
+	proxyCmd.MarkFlagRequired("orgName")
+	proxyCmd.Flags().StringVarP(&apiName, "apiName", "b", "", "backend API name")
+	proxyCmd.MarkFlagRequired("apiName")
 
-		proxyCmd.Flags().StringVarP(&proxyVersion, "proxyVersion", "v", "1.0", "provide the proxy version")
-		proxyCmd.Flags().StringVarP(&proxyState, "proxyState", "p", "published", "provide the proxy state")
-	}
+	proxyCmd.Flags().StringVarP(&appName, "appName", "a", "", "application name")
+	proxyCmd.Flags().StringVarP(&security, "security", "s", "passthrough", "provide the security to use for proxy: \napikey \nhttpbasic \noauth \npassthrough")
+	proxyCmd.Flags().StringVarP(&resourcePath, "resourcePath", "r", "", "provide the resource path for the proxy")
+	proxyCmd.Flags().StringVarP(&certPath, "certPath", "c", "", "provide the location of the backend api cert")
+
+	proxyCmd.Flags().StringVarP(&proxyVersion, "proxyVersion", "v", "1.0", "provide the proxy version")
+	proxyCmd.Flags().StringVarP(&proxyState, "proxyState", "p", "published", "provide the proxy state")
 
 }
 
 func createProxy(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+	proxyBody := apimgr.VirtualizedApi{}
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
 
-	if file == "" {
-		if resourcePath == "" {
-			fmt.Fprintln(os.Stderr, "Resource path is empty,so adding a random path ")
-			resourcePath = "/api/v1"
-		}
-	} else {
-
+	if resourcePath == "" {
+		fmt.Fprintln(os.Stderr, "Resource path is empty,so adding a random path ")
+		resourcePath = "/api/" + getUniqueID(5) + "/v1"
+	}
+	if certPath != "" {
+		certs, _ := importCerts(cfg, certPath)
+		proxyBody.CaCerts = certs
 	}
 
-	proxyName := name
-	name = apiName
 	apiID := getAPIByName(args)
-	name = orgName
+
 	orgID := getOrganizationByName(args)
-	cfg := getConfig()
 
 	pro, err := getProxyByName(args, cfg)
 	if err == nil {
 		utils.PrettyPrintInfo("Proxy with name %v already exists", pro.Name)
 		return
-	}
-
-	client := &apimgr.APIClient{}
-	client = apimgr.NewAPIClient(cfg)
-
-	proxyBody := apimgr.VirtualizedApi{}
-
-	if certPath != "" {
-		certs, _ := importCerts(cfg, certPath)
-		proxyBody.CaCerts = certs
 	}
 
 	switch security {
@@ -145,7 +140,7 @@ func createProxy(cmd *cobra.Command, args []string) {
 	proxyBody.Path = resourcePath //"/bank/v1"
 	proxyBody.ApiId = apiID
 	proxyBody.OrganizationId = orgID
-	proxyBody.Name = proxyName
+	proxyBody.Name = name
 	proxyBody.Version = proxyVersion
 	proxyBody.State = proxyState
 
@@ -154,7 +149,11 @@ func createProxy(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Error creating proxy :%v", err)
 		return
 	}
-	utils.PrettyPrintInfo("Proxy Created:%v", proxy.Name)
+	utils.PrettyPrintInfo("Proxy %v created", proxy.Name)
+	if appName != "" {
+		appID := getApplicationByName(args)
+		reqApplicationAPIAccess(appID, proxy.Id, cfg)
+	}
 	return
 }
 
@@ -182,7 +181,6 @@ func importCerts(cfg *apimgr.Configuration, certpath string) ([]apimgr.CaCert, e
 }
 
 func getProxyByName(args []string, cfg *apimgr.Configuration) (apimgr.VirtualizedApi, error) {
-	utils.PrettyPrintInfo("Getting Proxy By Name ....")
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 
@@ -199,10 +197,10 @@ func getProxyByName(args []string, cfg *apimgr.Configuration) (apimgr.Virtualize
 		return proxy, err
 	}
 	if len(proxies) != 0 {
-		utils.PrettyPrintInfo("Proxy found: %v", proxies[0].Name)
+		// utils.PrettyPrintInfo("Proxy found: %v", proxies[0].Name)
 		return proxies[0], nil
 	}
-	utils.PrettyPrintInfo("Proxy %v not found ", name)
+	// utils.PrettyPrintInfo("Proxy %v not found ", name)
 	return proxy, errors.New("Proxy not found")
 }
 
@@ -219,9 +217,10 @@ func listProxies(cmd *cobra.Command, args []string) {
 		return
 	}
 	if len(proxies) != 0 {
-		fmt.Fprintf(stdout, "NAME\tPATH\tSTATE\n")
+		fmt.Fprintf(stdout, "ID\tNAME\tORGANIZATION\tPATH\tSTATE\tVERSION\n")
 		for _, proxy := range proxies {
-			fmt.Fprintf(stdout, "%v\t%v\t%v\n", proxy.Name, proxy.Path, proxy.State)
+			org, _, _ := client.OrganizationsApi.OrganizationsIdGet(context.Background(), proxy.OrganizationId)
+			fmt.Fprintf(stdout, "%v\t%v\t%v\t%v\t%v\t%v\n", proxy.Id, proxy.Name, org.Name, proxy.Path, proxy.State, proxy.Version)
 		}
 		fmt.Fprint(stdout)
 		stdout.Flush()
@@ -240,7 +239,7 @@ func deleteProxy(cmd *cobra.Command, args []string) {
 		return
 	}
 	if proxy.State == "published" {
-		utils.PrettyPrintInfo("Delete error: Proxy %v is in published state ....", proxy.Name)
+		fmt.Printf("Unable to Delete, Proxy %v is in published state \n", proxy.Name)
 		return
 	}
 

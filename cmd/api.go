@@ -71,22 +71,20 @@ func init() {
 	listCmd.AddCommand(apiListCmd)
 	deleteCmd.AddCommand(apiDelCmd)
 
-	apiCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the swagger api to be stored")
-	apiCmd.MarkFlagRequired("file")
-	apiCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store API name")
+	apiCmd.Flags().StringVarP(&file, "swagger", "f", "", "The filename of the swagger api to be stored")
+	apiCmd.MarkFlagRequired("swagger")
+	apiCmd.Flags().StringVarP(&apiName, "name", "n", "", "The name to store API name")
 	apiCmd.MarkFlagRequired("name")
 	apiCmd.Flags().StringVarP(&orgName, "orgName", "o", "", "The name to store Organization name")
 	apiCmd.MarkFlagRequired("orgName")
 
-	apiDelCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store API name")
+	apiDelCmd.Flags().StringVarP(&apiName, "name", "n", "", "The name to store API name")
 	apiDelCmd.MarkFlagRequired("name")
 }
 
 func createBackendAPI(cmd *cobra.Command, args []string) {
-	utils.PrettyPrintInfo("Creating backend API")
+	// utils.PrettyPrintInfo("Creating backend API")
 
-	apiName := name
-	name = orgName
 	cfg := getConfig()
 	orgID := getOrganizationByName(args)
 
@@ -102,7 +100,7 @@ func createBackendAPI(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Error Creating Backend API: %v", err)
 		return
 	}
-	utils.PrettyPrintInfo("Backend API Name %v with ID: %v created", beAPI.Name, beAPI.Id)
+	utils.PrettyPrintInfo("Backend API %v with ID: %v created", beAPI.Name, beAPI.Id)
 	return
 }
 
@@ -120,9 +118,10 @@ func listBackendAPI(cmd *cobra.Command, args []string) {
 	}
 
 	if len(apis) != 0 {
-		fmt.Fprintf(stdout, "NAME\tID\n")
+		fmt.Fprintf(stdout, "ID\tNAME\tORGANIZATION\tBACKEND URL\tVERSION\n")
 		for _, api := range apis {
-			fmt.Fprintf(stdout, "%v\t%v\n", api.Name, api.Id)
+			org, _, _ := client.OrganizationsApi.OrganizationsIdGet(context.Background(), api.OrganizationId)
+			fmt.Fprintf(stdout, "%v\t%v\t%v\t%v\t%v\n", api.Id, api.Name, org.Name, api.BasePath+api.ResourcePath, api.Version)
 		}
 		fmt.Fprint(stdout)
 		stdout.Flush()
@@ -135,7 +134,7 @@ func listBackendAPI(cmd *cobra.Command, args []string) {
 func getAPIByName(args []string) string {
 	cfg := getConfig()
 
-	utils.PrettyPrintInfo("Finding API %v ....", name)
+	// utils.PrettyPrintInfo("Finding API %v ....", apiName)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -144,7 +143,7 @@ func getAPIByName(args []string) string {
 
 	apiGetOpts.Field = optional.NewInterface("name")
 	apiGetOpts.Op = optional.NewInterface("eq")
-	apiGetOpts.Value = optional.NewInterface(name)
+	apiGetOpts.Value = optional.NewInterface(apiName)
 
 	apis, _, err := client.APIRepositoryApi.ApirepoGet(context.Background(), apiGetOpts)
 	if err != nil {
@@ -152,10 +151,10 @@ func getAPIByName(args []string) string {
 		os.Exit(0)
 	}
 	if len(apis) != 0 {
-		utils.PrettyPrintInfo("Backend API found: %v", apis[0].Name)
+		// utils.PrettyPrintInfo("Backend API found: %v", apis[0].Name)
 		return apis[0].Id
 	}
-	utils.PrettyPrintInfo("Backend API %v not found ", name)
+	utils.PrettyPrintInfo("Backend API %v not found ", apiName)
 	os.Exit(0)
 	return apis[0].Id
 }
@@ -165,8 +164,6 @@ func deleteAPI(cmd *cobra.Command, args []string) {
 
 	apiID := getAPIByName(args)
 
-	utils.PrettyPrintInfo("Deleting API %v ....", name)
-
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 
@@ -175,5 +172,6 @@ func deleteAPI(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Unable to delete the backend API: %v", err)
 		return
 	}
+	utils.PrettyPrintInfo("Backend API %v Deleted", apiName)
 	return
 }

@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +42,13 @@ var (
 	# Create an organization using the data in org.json
 	apimanager create user -f user.json
 	`,
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if file == "" {
+				cmd.MarkFlagRequired("name")
+				cmd.MarkFlagRequired("loginName")
+				cmd.MarkFlagRequired("role")
+			}
+		},
 		Run: createUser,
 	}
 
@@ -77,34 +85,73 @@ func init() {
 	listCmd.AddCommand(userListCmd)
 
 	userCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the raw data to be stored")
-	userCmd.MarkFlagRequired("file")
+	// userCmd.MarkFlagRequired("file")
+
 	userCmd.Flags().StringVarP(&orgName, "orgName", "o", "", "The name to store Organization name")
 	userCmd.MarkFlagRequired("orgName")
-	userCmd.Flags().StringVarP(&password, "password", "p", "", "The password for the user")
-	userCmd.MarkFlagRequired("password")
+	userCmd.Flags().StringVarP(&password, "password", "p", "", "change password for the user")
+	// userCmd.MarkFlagRequired("password")
 
-	userDelCmd.Flags().StringVarP(&name, "name", "n", "", "The name of the username")
+	userCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
+	userCmd.Flags().StringVarP(&loginName, "loginName", "l", "", "login name for the user")
+	userCmd.Flags().StringVarP(&userRole, "role", "r", "", "login name for the user")
+
+	userCmd.Flags().StringVarP(&image, "image", "i", "", "filename of the image to be used")
+
+	userDelCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
 	userDelCmd.MarkFlagRequired("name")
 }
 
 func createUser(cmd *cobra.Command, args []string) {
 
 	cfg := getConfig()
-	userBody, err := ioutil.ReadFile(file) // pass the file name with path
-	if err != nil {
-		fmt.Print(err)
-	}
-
-	name = orgName
 	orgID := getOrganizationByName(args)
-
 	newUser := apimgr.User{}
-	newUser.OrganizationId = orgID
-	err = json.Unmarshal([]byte(userBody), &newUser)
-	if err != nil {
-		utils.PrettyPrintErr("Error unmarshaling user json: %v", err)
+
+	if file != "" {
+		userBody, err := ioutil.ReadFile(file) // pass the file name with path
+		if err != nil {
+			fmt.Print(err)
+		}
+		err = json.Unmarshal([]byte(userBody), &newUser)
+		if err != nil {
+			utils.PrettyPrintErr("Error unmarshaling user json: %v", err)
+		}
+		if newUser.Name == "" && userName == "" {
+			fmt.Printf("User name is required\n")
+			return
+		}
+		if newUser.Name == "" {
+			newUser.Name = userName
+		}
+		newUser.OrganizationId = orgID
+	} else {
+		if image != "" {
+			bImage, err := ioutil.ReadFile(image) // pass the file name with path
+			if err != nil {
+				fmt.Print(err)
+			}
+			newUser.Image = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(bImage)
+		}
+		newUser.Name = userName
+		newUser.Description = userName + " is a " + userRole
+		newUser.Phone = "+1 877-564-7700"
+		newUser.Email = loginName + "@apimanager.com"
+		newUser.LoginName = loginName
+		newUser.Role = userRole
+		newUser.Enabled = true
+		newUser.OrganizationId = orgID
 	}
-	utils.PrettyPrintInfo("Creating a new user %v....", newUser.Name)
+
+	// utils.PrettyPrintInfo("Creating a new user %v, %v %v ....", newUser.Name, newUser.LoginName, newUser.Email)
+
+	if verifyIfUserExists(newUser.Email, newUser.LoginName, args) {
+		utils.PrettyPrintInfo("User %v with login: %v or email: %v already exists....", newUser.Name, newUser.LoginName, newUser.Email)
+		return
+	}
+	if password != "" && len(password) < 6 {
+		utils.PrettyPrintInfo("Minimum password length is 6 chars")
+	}
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 
@@ -116,7 +163,10 @@ func createUser(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Error creating user:%v", err)
 	}
 	utils.PrettyPrintInfo("New user %v created", user.Name)
-	changeUserPassword(user.Id, password, cfg)
+	if password != "" {
+		changeUserPassword(user.Id, password, cfg)
+	}
+
 	return
 }
 
@@ -124,7 +174,7 @@ func getUserByName(args []string) string {
 
 	cfg := getConfig()
 
-	utils.PrettyPrintInfo("Finding User %v ....", name)
+	// utils.PrettyPrintInfo("Finding User %v ....", userName)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -133,7 +183,7 @@ func getUserByName(args []string) string {
 
 	getUserVars.Field = optional.NewInterface("name")
 	getUserVars.Op = optional.NewInterface("eq")
-	getUserVars.Value = optional.NewInterface(name)
+	getUserVars.Value = optional.NewInterface(userName)
 
 	users, _, err := client.UsersApi.UsersGet(context.Background(), getUserVars)
 	if err != nil {
@@ -141,10 +191,10 @@ func getUserByName(args []string) string {
 		os.Exit(0)
 	}
 	if len(users) != 0 {
-		utils.PrettyPrintInfo("User found: %v", users[0].Name)
+		// utils.PrettyPrintInfo("User found: %v", users[0].Name)
 		return users[0].Id
 	}
-	utils.PrettyPrintInfo("User %v not found ", name)
+	utils.PrettyPrintInfo("User %v not found ", userName)
 	return "User Not Found"
 
 }
@@ -155,6 +205,8 @@ func listUsers(cmd *cobra.Command, args []string) {
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 
+	stdout := fmtDisplay()
+
 	getUserVars := &apimgr.UsersGetOpts{}
 
 	users, _, err := client.UsersApi.UsersGet(context.Background(), getUserVars)
@@ -163,10 +215,13 @@ func listUsers(cmd *cobra.Command, args []string) {
 		return
 	}
 	if len(users) != 0 {
-		fmt.Printf("Name \t\t ID \n")
+		fmt.Fprintf(stdout, "ID\tNAME\tLOGIN\tORGANIZATION\tEMAIL\tROLE\n")
 		for _, user := range users {
-			fmt.Printf("%v \t %v \n", user.Name, user.Id)
+			org, _, _ := client.OrganizationsApi.OrganizationsIdGet(context.Background(), user.OrganizationId)
+			fmt.Fprintf(stdout, "%v\t%v\t%v\t%v\t%v\t%v\n", user.Id, user.Name, user.LoginName, org.Name, user.Email, user.Role)
 		}
+		fmt.Fprint(stdout)
+		stdout.Flush()
 	} else {
 		utils.PrettyPrintInfo("No users found ")
 		return
@@ -174,12 +229,8 @@ func listUsers(cmd *cobra.Command, args []string) {
 }
 
 func deleteUser(cmd *cobra.Command, args []string) {
-
 	cfg := getConfig()
-
 	userID := getUserByName(args)
-
-	utils.PrettyPrintInfo("Deleting User %v ....", name)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -189,11 +240,45 @@ func deleteUser(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Unable to delete the user: %v", err)
 		return
 	}
+	utils.PrettyPrintInfo("User %v Deleted", userName)
 	return
 }
 
+func verifyIfUserExists(uEmail, lName string, args []string) bool {
+
+	cfg := getConfig()
+
+	// utils.PrettyPrintInfo("Verify User %v ....", lName)
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	getUserVars := &apimgr.UsersGetOpts{}
+
+	getUserVars.Field = optional.NewInterface("loginName")
+	getUserVars.Op = optional.NewInterface("eq")
+	getUserVars.Value = optional.NewInterface(lName)
+
+	getUserVars.Field = optional.NewInterface("email")
+	getUserVars.Op = optional.NewInterface("eq")
+	getUserVars.Value = optional.NewInterface(uEmail)
+
+	users, _, err := client.UsersApi.UsersGet(context.Background(), getUserVars)
+	if err != nil {
+		utils.PrettyPrintErr("Error finding the user: %v", err)
+		os.Exit(0)
+	}
+	if len(users) != 0 {
+		// utils.PrettyPrintInfo("User found: %v", users[0].Name)
+		return true
+	}
+	// utils.PrettyPrintInfo("User %v not found ", userName)
+	return false
+
+}
+
 func changeUserPassword(userID, newPassword string, cfg *apimgr.Configuration) {
-	utils.PrettyPrintInfo("Change password for the UserId :%v", userID)
+	// utils.PrettyPrintInfo("Change password for the UserId :%v", userID)
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 

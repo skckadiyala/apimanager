@@ -22,8 +22,9 @@ import (
 
 // listCmd represents the list command
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "list all API Manager resource",
+	Use:     "list",
+	Aliases: []string{"get"},
+	Short:   "list all API Manager resource",
 	Long: `list all API Manager resource by name. 
 
 For example:
@@ -32,7 +33,7 @@ For example:
   apimanager list org 
 
   # Create all applications  
-  apimanager delete app 
+  apimanager get app 
 	`,
 	// Run: func(cmd *cobra.Command, args []string) {
 	// 	fmt.Println("list called")

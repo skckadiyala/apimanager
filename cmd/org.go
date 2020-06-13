@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -32,8 +33,9 @@ import (
 // orgCmd represents the org command
 var (
 	orgCmd = &cobra.Command{
-		Use:   "org",
-		Short: "Create an organization",
+		Use:     "org",
+		Aliases: []string{"organization"},
+		Short:   "Create an organization",
 		Long: `Create an organization from a file.  JSON format is accepted. 
 
 For example:
@@ -43,28 +45,18 @@ For example:
 
   apimanager create organization -f ./org.json
 `,
-		Run: createOrganization,
-	}
-
-	orgCreateCmd = &cobra.Command{
-		Hidden: true,
-		Use:    "organization",
-		Short:  "Create an organization",
-		Long: `Create an organization from a file. JSON format is accepted. 
-
-For example:
-
-  # Create an organization using the data in org.json
-  apimanager create org -f ./org.json
-
-  apimanager create organization -f ./org.json
-`,
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if file == "" {
+				cmd.MarkFlagRequired("name")
+			}
+		},
 		Run: createOrganization,
 	}
 
 	orgDelCmd = &cobra.Command{
-		Use:   "org",
-		Short: "Delete an organization",
+		Use:     "org",
+		Aliases: []string{"organization"},
+		Short:   "Delete an organization",
 		Long: `Delete an organization by name. 
 	
 	For example:
@@ -75,8 +67,9 @@ For example:
 	}
 
 	orgListCmd = &cobra.Command{
-		Use:   "orgs",
-		Short: "List all organizations",
+		Use:     "orgs",
+		Aliases: []string{"organizations", "org"},
+		Short:   "List all organizations",
 		Long: `lists all organization by name and ID. 
 	
 	For example:
@@ -89,32 +82,54 @@ For example:
 
 func init() {
 	createCmd.AddCommand(orgCmd)
-	createCmd.AddCommand(orgCreateCmd)
 	deleteCmd.AddCommand(orgDelCmd)
 	listCmd.AddCommand(orgListCmd)
 
-	orgCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the raw data to be stored")
-	orgCmd.MarkFlagRequired("file")
-	orgCreateCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the raw data to be stored")
-	orgCreateCmd.MarkFlagRequired("file")
-	orgDelCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store Organization name")
+	orgCmd.Flags().StringVarP(&file, "file", "f", "", "filename used to create the organization resource")
+	orgCmd.Flags().StringVarP(&orgName, "name", "n", "", "organization name")
+	orgCmd.Flags().BoolVarP(&enabled, "enabled", "e", false, "enable the organization")
+	orgCmd.Flags().BoolVarP(&development, "development", "d", false, "enable organization for development")
+	orgCmd.Flags().StringVarP(&image, "image", "i", "", "filename of the image to be used")
+
+	orgDelCmd.Flags().StringVarP(&orgName, "name", "n", "", "The name to store Organization name")
 	orgDelCmd.MarkFlagRequired("name")
 }
 
 func createOrganization(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
-	orgBody, err := ioutil.ReadFile(file) // pass the file name with path
-	if err != nil {
-		fmt.Print(err)
-	}
-
 	org := apimgr.Organization{}
 
-	err = json.Unmarshal([]byte(orgBody), &org)
-	if err != nil {
-		utils.PrettyPrintErr("Error unmarshaling org json: %v", err)
+	if file != "" {
+		orgBody, err := ioutil.ReadFile(file) // pass the file name with path
+		if err != nil {
+			fmt.Print(err)
+		}
+		err = json.Unmarshal([]byte(orgBody), &org)
+		if err != nil {
+			utils.PrettyPrintErr("Error unmarshaling org json: %v", err)
+		}
+		if org.Name == "" && orgName == "" {
+			fmt.Printf("Organization name is not provided\n")
+			return
+		}
+		org.Name = orgName
+	} else {
+		if image != "" {
+			bImage, err := ioutil.ReadFile(image) // pass the file name with path
+			if err != nil {
+				fmt.Print(err)
+			}
+			org.Image = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(bImage)
+		}
+
+		org.Name = orgName
+		org.Description = orgName + "Organization"
+		org.Phone = "+1 877-564-7700"
+		org.Email = orgName + "@apimanager.com"
+		org.Enabled = enabled
+		org.Development = development
+		org.VirtualHost = ""
 	}
-	utils.PrettyPrintInfo("Creating a new Organization %v....", org.Name)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -122,7 +137,7 @@ func createOrganization(cmd *cobra.Command, args []string) {
 	orgVars := &apimgr.OrganizationsPostOpts{}
 	orgVars.Body = optional.NewInterface(org)
 
-	org, _, err = client.OrganizationsApi.OrganizationsPost(context.Background(), orgVars)
+	org, _, err := client.OrganizationsApi.OrganizationsPost(context.Background(), orgVars)
 	if err != nil {
 		utils.PrettyPrintErr("Error Creating Organization: %v", err)
 		return
@@ -133,10 +148,7 @@ func createOrganization(cmd *cobra.Command, args []string) {
 
 func deleteOrganization(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
-
 	orgID := getOrganizationByName(args)
-
-	utils.PrettyPrintInfo("Deleting Organization %v ....", name)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -146,13 +158,12 @@ func deleteOrganization(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Unable to delete the Organization: %v", err)
 		return
 	}
+	utils.PrettyPrintInfo("Organization %v deleted", orgName)
 	return
 }
 
 func getOrganizationByName(args []string) string {
 	cfg := getConfig()
-
-	utils.PrettyPrintInfo("Finding Organization %v ....", name)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -161,7 +172,7 @@ func getOrganizationByName(args []string) string {
 
 	getOrgVars.Field = optional.NewInterface("name")
 	getOrgVars.Op = optional.NewInterface("eq")
-	getOrgVars.Value = optional.NewInterface(name)
+	getOrgVars.Value = optional.NewInterface(orgName)
 
 	orgs, _, err := client.OrganizationsApi.OrganizationsGet(context.Background(), getOrgVars)
 	if err != nil {
@@ -169,10 +180,9 @@ func getOrganizationByName(args []string) string {
 		os.Exit(0)
 	}
 	if len(orgs) != 0 {
-		utils.PrettyPrintInfo("Organization found: %v", orgs[0].Name)
 		return orgs[0].Id
 	}
-	utils.PrettyPrintInfo("Organization %v not found ", name)
+	utils.PrettyPrintInfo("Organization %v not found ", orgName)
 	os.Exit(0)
 	return orgs[0].Id
 }
@@ -190,9 +200,9 @@ func listOrganizations(cmd *cobra.Command, args []string) {
 		return
 	}
 	if len(orgs) != 0 {
-		fmt.Fprintf(stdout, "NAME\tID\n")
+		fmt.Fprintf(stdout, "ID\tNAME\tDESCRIPTION\tCONTACT\n")
 		for _, org := range orgs {
-			fmt.Fprintf(stdout, "%v\t%v\n", org.Name, org.Id)
+			fmt.Fprintf(stdout, "%v\t%v\t%v\t%v\n", org.Id, org.Name, org.Description, org.Email)
 		}
 		fmt.Fprint(stdout)
 		stdout.Flush()

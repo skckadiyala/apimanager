@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/skckadiyala/apimanager/apimgr"
 	"github.com/skckadiyala/kubecrt-vms/utils"
@@ -27,16 +28,18 @@ import (
 // unpublishCmd represents the unpublish command
 var (
 	unpublishCmd = &cobra.Command{
-		Use:   "unpublish",
-		Short: "unpublish a proxy",
+		Use:     "unpublish",
+		Aliases: []string{"unpub"},
+		Short:   "unpublish a proxy",
 		Long: `unpublish the proxy For example:
 
 apimanager unpublish -p <proxy Name>`,
 		Run: unpublishProxy,
 	}
 	publishCmd = &cobra.Command{
-		Use:   "publish",
-		Short: "publish a proxy",
+		Use:     "publish",
+		Aliases: []string{"pub"},
+		Short:   "publish a proxy",
 		Long: `publish the proxy For example:
 
 apimanager publish -p <proxy Name>`,
@@ -57,7 +60,6 @@ func init() {
 
 // (proxyID string, cfg *apimgr.Configuration)
 func unpublishProxy(cmd *cobra.Command, args []string) {
-	utils.PrettyPrintInfo("unpublish Proxy ....")
 	cfg := getConfig()
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -71,11 +73,12 @@ func unpublishProxy(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Error Updating the Proxy: %v", err)
 		return
 	}
+	fmt.Printf("Proxy %v unpublished \n", proxy.Name)
 	return
 }
 
 func publishProxy(cmd *cobra.Command, args []string) {
-	utils.PrettyPrintInfo("publish Proxy ....")
+
 	cfg := getConfig()
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -89,5 +92,6 @@ func publishProxy(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Error Updating the Proxy: %v", err)
 		return
 	}
+	fmt.Printf("Proxy %v published \n", proxy.Name)
 	return
 }

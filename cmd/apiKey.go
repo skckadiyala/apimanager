@@ -28,40 +28,27 @@ import (
 
 // apiKeyCmd represents the apiKey command
 var (
-	apiKeyCmd = &cobra.Command{
-		Use:   "apiKey",
-		Short: "Create an APIKey",
-		Long: `Create an APIKey for an application. 
-
-	For example:
-	
-	  # Create an apiKey in an application 
-	  apimanager create apiKey -o <appname>
-
-	  apimanager create key -o <appname>
-	`,
-		Run: createAPIKey,
-	}
-
 	keyCmd = &cobra.Command{
-		Hidden: true,
-		Use:    "key",
-		Short:  "Create an APIKey",
+		Hidden:  true,
+		Use:     "key",
+		Aliases: []string{"apikeys"},
+		Short:   "Create an APIKey",
 		Long: `Create an APIKey for an application.
 
 	For example:
-	
-	  # Create an apiKey in an application 
+
+	  # Create an apiKey in an application
 	  apimanager create apiKey -o <appname>
 
-	  apimanager create key -o <appname>
+	  apimanager create key -a <appname>
 	`,
 		Run: createAPIKey,
 	}
 
 	keyListCmd = &cobra.Command{
-		Use:   "keys",
-		Short: "List all apiKeys",
+		Use:     "keys",
+		Aliases: []string{"apikeys"},
+		Short:   "List all apiKeys",
 		Long: `List all apiKeys from an application. 
 	
 	For example:
@@ -72,23 +59,10 @@ var (
 		Run: listAPIKeys,
 	}
 
-	apiKeyListCmd = &cobra.Command{
-		Hidden: true,
-		Use:    "apiKeys",
-		Short:  "List all apiKeys",
-		Long: `List all apiKeys from an application.
-	
-	For example:
-	
-	# list all the applications 
-	apimanager list apiKeys -a <appName> 
-	`,
-		Run: listAPIKeys,
-	}
-
 	keyDelCmd = &cobra.Command{
-		Use:   "key",
-		Short: "Delete an apiKey",
+		Use:     "key",
+		Aliases: []string{"apikeys"},
+		Short:   "Delete an apiKey",
 		Long: `Delete an apiKey from an application. 
 	
 	For example:
@@ -98,50 +72,24 @@ var (
 	`,
 		Run: deleteAPIKey,
 	}
-
-	apiKeyDelCmd = &cobra.Command{
-		Hidden: true,
-		Use:    "apiKey",
-		Short:  "Delete an apiKey",
-		Long: `Delete an apiKey from an application. 
-	
-	For example:
-	
-	# Delete an apikey from the application 
-	apimanager delete apiKey -a <appName> -k <keyID>
-	`,
-		Run: deleteAPIKey,
-	}
 )
 
 func init() {
-	createCmd.AddCommand(apiKeyCmd)
+
 	createCmd.AddCommand(keyCmd)
-
 	listCmd.AddCommand(keyListCmd)
-	listCmd.AddCommand(apiKeyListCmd)
-
 	deleteCmd.AddCommand(keyDelCmd)
-	deleteCmd.AddCommand(apiKeyDelCmd)
 
-	apiKeyCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
-	apiKeyCmd.MarkFlagRequired("appName")
 	keyCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
 	keyCmd.MarkFlagRequired("appName")
 
 	keyListCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
 	keyListCmd.MarkFlagRequired("appName")
-	apiKeyListCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
-	apiKeyListCmd.MarkFlagRequired("appName")
 
 	keyDelCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
 	keyDelCmd.MarkFlagRequired("appName")
 	keyDelCmd.Flags().StringVarP(&keyID, "keyID", "k", "", "The keyID to delete")
 	keyDelCmd.MarkFlagRequired("keyID")
-	apiKeyDelCmd.Flags().StringVarP(&appName, "appName", "a", "", "The name to store application name")
-	apiKeyDelCmd.MarkFlagRequired("appName")
-	apiKeyDelCmd.Flags().StringVarP(&keyID, "keyID", "k", "", "The keyID to delete")
-	apiKeyDelCmd.MarkFlagRequired("keyID")
 }
 
 func createAPIKey(cmd *cobra.Command, args []string) {
@@ -173,8 +121,8 @@ func listAPIKeys(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
+	stdout := fmtDisplay()
 
-	name = appName
 	appID := getApplicationByName(args)
 
 	keys, _, err := client.ApplicationsApi.ApplicationsIdApikeysGet(context.Background(), appID)
@@ -183,12 +131,14 @@ func listAPIKeys(cmd *cobra.Command, args []string) {
 		return
 	}
 	if len(keys) != 0 {
-		fmt.Printf("apiKey \t\t\t\t Secret \n")
+		fmt.Fprintf(stdout, "APIKEY\tSECRET\n")
 		for _, key := range keys {
-			fmt.Printf("%v \t %v \n", key.Id, key.Secret)
+			fmt.Fprintf(stdout, "%v\t%v\n", key.Id, key.Secret)
 		}
+		fmt.Fprint(stdout)
+		stdout.Flush()
 	} else {
-		utils.PrettyPrintInfo("No apikey found ")
+		utils.PrettyPrintInfo("No apikeys found in the application %v", appName)
 		return
 	}
 }
@@ -196,8 +146,6 @@ func listAPIKeys(cmd *cobra.Command, args []string) {
 func deleteAPIKey(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
 	appID := getApplicationByName(args)
-
-	utils.PrettyPrintInfo("Deleting apikey from the applocation %v ....", name)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -207,5 +155,7 @@ func deleteAPIKey(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Unable to delete the apikey: %v", err)
 		return
 	}
+	utils.PrettyPrintInfo("APIkey %v deleted from the applocation %v ....", keyID, appName)
+
 	return
 }

@@ -18,7 +18,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/antihax/optional"
@@ -39,6 +41,11 @@ var (
 	  # Create an application by name
 	  apimanager create app -n <appname> -o <orgName>
 	`,
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if file == "" {
+				cmd.MarkFlagRequired("name")
+			}
+		},
 		Run: createApplication,
 	}
 	appDelCmd = &cobra.Command{
@@ -73,45 +80,60 @@ func init() {
 	deleteCmd.AddCommand(appDelCmd)
 	listCmd.AddCommand(appListCmd)
 
+	appCmd.Flags().StringVarP(&file, "file", "f", "", "filename used to create an application resource")
+
 	appCmd.Flags().StringVarP(&orgName, "orgName", "o", "", "The name to store Organization name")
 	appCmd.MarkFlagRequired("orgName")
-	appCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store application name")
-	appCmd.MarkFlagRequired("name")
+	appCmd.Flags().StringVarP(&appName, "name", "n", "", "The name to store application name")
 
-	appDelCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store application name")
+	appDelCmd.Flags().StringVarP(&appName, "name", "n", "", "The name to store application name")
 	appDelCmd.MarkFlagRequired("name")
-	// appListCmd.Flags().StringVarP(&name, "name", "n", "", "The name to store application name")
-	// appListCmd.MarkFlagRequired("name")
 
 }
 
 func createApplication(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
-
-	newApp := apimgr.ApplicationRequest{}
-	newApp.Name = name
-	newApp.Description = name + ": is application"
-	newApp.Phone = "+1 877-564-7700"
-	newApp.Email = name + "@postmanpat.com"
-	newApp.Apis = []string{}
-
-	name = orgName
 	orgID := getOrganizationByName(args)
+	app := apimgr.ApplicationRequest{}
 
-	newApp.OrganizationId = orgID
+	if file != "" {
+		appBody, err := ioutil.ReadFile(file) // pass the file name with path
+		if err != nil {
+			fmt.Print(err)
+		}
+		err = json.Unmarshal([]byte(appBody), &app)
+		if err != nil {
+			utils.PrettyPrintErr("Error unmarshaling org json: %v", err)
+		}
+		if app.Name == "" && appName == "" {
+			fmt.Printf("Application name is required\n")
+			return
+		}
+		if app.Name == "" {
+			app.Name = appName
+		}
+		app.OrganizationId = orgID
+	} else {
+		app.Name = appName
+		app.Description = appName + " Application"
+		app.Phone = "+1 877-564-7700"
+		app.Email = appName + "@apimanager.com"
+		app.Apis = []string{}
+		app.OrganizationId = orgID
+	}
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
 
 	appVars := &apimgr.ApplicationsPostOpts{}
-	appVars.Body = optional.NewInterface(newApp)
+	appVars.Body = optional.NewInterface(app)
 
-	app, _, err := client.ApplicationsApi.ApplicationsPost(context.Background(), appVars)
+	appResp, _, err := client.ApplicationsApi.ApplicationsPost(context.Background(), appVars)
 	if err != nil {
 		utils.PrettyPrintErr("Error creating application: %v", err)
 		return
 	}
-	utils.PrettyPrintInfo("Application %v Created", app.Name)
+	utils.PrettyPrintInfo("Application %v Created", appResp.Name)
 	return
 }
 
@@ -119,7 +141,7 @@ func deleteApplication(cmd *cobra.Command, args []string) {
 	cfg := getConfig()
 	appID := getApplicationByName(args)
 
-	utils.PrettyPrintInfo("Deleting application %v ....", name)
+	// utils.PrettyPrintInfo("Deleting application %v ....", appName)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -129,13 +151,14 @@ func deleteApplication(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintErr("Unable to delete the application: %v", err)
 		return
 	}
+	utils.PrettyPrintInfo("application %v deleted", appName)
 	return
 }
 
 func getApplicationByName(args []string) string {
 	cfg := getConfig()
 
-	utils.PrettyPrintInfo("Finding application %v ....", name)
+	// utils.PrettyPrintInfo("Finding application %v ....", appName)
 
 	client := &apimgr.APIClient{}
 	client = apimgr.NewAPIClient(cfg)
@@ -144,7 +167,7 @@ func getApplicationByName(args []string) string {
 
 	getAppVars.Field = optional.NewInterface("name")
 	getAppVars.Op = optional.NewInterface("eq")
-	getAppVars.Value = optional.NewInterface(name)
+	getAppVars.Value = optional.NewInterface(appName)
 
 	apps, _, err := client.ApplicationsApi.ApplicationsGet(context.Background(), getAppVars)
 	if err != nil {
@@ -152,10 +175,10 @@ func getApplicationByName(args []string) string {
 		os.Exit(0)
 	}
 	if len(apps) != 0 {
-		utils.PrettyPrintInfo("application found: %v", apps[0].Name)
+		// utils.PrettyPrintInfo("application found: %v", apps[0].Name)
 		return apps[0].Id
 	}
-	utils.PrettyPrintInfo("application %v not found ", name)
+	utils.PrettyPrintInfo("application %v not found ", appName)
 	os.Exit(0)
 	return apps[0].Id
 }
@@ -167,18 +190,45 @@ func listApplications(cmd *cobra.Command, args []string) {
 
 	getAppVars := &apimgr.ApplicationsGetOpts{}
 
+	stdout := fmtDisplay()
+
 	apps, _, err := client.ApplicationsApi.ApplicationsGet(context.Background(), getAppVars)
 	if err != nil {
 		utils.PrettyPrintErr("Error listing the applications: %v", err)
 		return
 	}
 	if len(apps) != 0 {
-		fmt.Printf("Name \t\t ID \n")
+		// fmt.Printf("Name \t\t ID \n")
+		fmt.Fprintf(stdout, "ID\tNAME\tDESCRIPTION\tORGANIZATION\n")
 		for _, app := range apps {
-			fmt.Printf("%v \t %v \n", app.Name, app.Id)
+			// fmt.Printf("%v \t %v \n", app.Name, app.Id)
+			org, _, _ := client.OrganizationsApi.OrganizationsIdGet(context.Background(), app.OrganizationId)
+			fmt.Fprintf(stdout, "%v\t%v\t%vv\t%v\n", app.Id, app.Name, app.Description, org.Name)
 		}
+		fmt.Fprint(stdout)
+		stdout.Flush()
 	} else {
 		utils.PrettyPrintInfo("No application found ")
 		return
 	}
+}
+
+func reqApplicationAPIAccess(appID, apiID string, cfg *apimgr.Configuration) {
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	reqBody := apimgr.ApiAccess{}
+	reqBody.ApiId = apiID
+	reqBody.Enabled = true
+
+	optVars := &apimgr.ApplicationsIdApisPostOpts{}
+	optVars.Body = optional.NewInterface(reqBody)
+
+	apiAccess, _, err := client.ApplicationsApi.ApplicationsIdApisPost(context.Background(), appID, optVars)
+	if err != nil {
+		utils.PrettyPrintErr("Error creating access to apis %v", err)
+	}
+
+	utils.PrettyPrintInfo(apiAccess.ApiId)
 }
