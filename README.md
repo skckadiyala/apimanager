@@ -1,5 +1,5 @@
 ## What is APIManager CLI?
-apimanager is a command line (CLI) utility which allows you to manage Axway's API Manager resources. 
+apimanager is a command line (CLI) utility which allows you to manage Axway's API Manager resources. This utility also allows you to automate the deployment of API Manager resources. It also allows you to view and edit the existing resources. 
 
 apimanager login
 
