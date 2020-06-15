@@ -124,7 +124,7 @@ func init() {
 
 	userCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
 	userCmd.Flags().StringVarP(&loginName, "loginName", "l", "", "login name for the user")
-	userCmd.Flags().StringVarP(&userRole, "role", "r", "", "login name for the user")
+	userCmd.Flags().StringVarP(&userRole, "role", "r", "", "role for the user")
 
 	userCmd.Flags().StringVarP(&image, "image", "i", "", "filename of the image to be used")
 
