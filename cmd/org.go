@@ -22,7 +22,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
+	"reflect"
 
 	"github.com/antihax/optional"
 	"github.com/skckadiyala/apimanager/apimgr"
@@ -78,12 +80,39 @@ For example:
 	  apimanager list orgs `,
 		Run: listOrganizations,
 	}
+
+	orgDescCmd = &cobra.Command{
+		Use:     "org",
+		Aliases: []string{"organization"},
+		Short:   "Describe an organization",
+		Long: `Describe an organization by name. 
+	
+	For example:
+	
+	  # Create an organization using the data in org.json
+	  apimanager describe org -n orgName`,
+		Run: describeOrganization,
+	}
+	orgEditCmd = &cobra.Command{
+		Use:     "org",
+		Aliases: []string{"organization"},
+		Short:   "Describe an organization",
+		Long: `Describe an organization by name. 
+	
+	For example:
+	
+	  # Create an organization using the data in org.json
+	  apimanager describe org -n orgName`,
+		Run: editOrganization,
+	}
 )
 
 func init() {
 	createCmd.AddCommand(orgCmd)
 	deleteCmd.AddCommand(orgDelCmd)
+	describeCmd.AddCommand(orgDescCmd)
 	listCmd.AddCommand(orgListCmd)
+	editCmd.AddCommand(orgEditCmd)
 
 	orgCmd.Flags().StringVarP(&file, "file", "f", "", "filename used to create the organization resource")
 	orgCmd.Flags().StringVarP(&orgName, "name", "n", "", "organization name")
@@ -93,6 +122,10 @@ func init() {
 
 	orgDelCmd.Flags().StringVarP(&orgName, "name", "n", "", "The name to store Organization name")
 	orgDelCmd.MarkFlagRequired("name")
+	orgDescCmd.Flags().StringVarP(&orgName, "name", "n", "", "The name to store Organization name")
+	orgDescCmd.MarkFlagRequired("name")
+	orgEditCmd.Flags().StringVarP(&orgName, "name", "n", "", "The name to store Organization name")
+	orgEditCmd.MarkFlagRequired("name")
 }
 
 func createOrganization(cmd *cobra.Command, args []string) {
@@ -123,7 +156,7 @@ func createOrganization(cmd *cobra.Command, args []string) {
 		}
 
 		org.Name = orgName
-		org.Description = orgName + "Organization"
+		org.Description = orgName + " Organization"
 		org.Phone = "+1 877-564-7700"
 		org.Email = orgName + "@apimanager.com"
 		org.Enabled = enabled
@@ -160,6 +193,72 @@ func deleteOrganization(cmd *cobra.Command, args []string) {
 	}
 	utils.PrettyPrintInfo("Organization %v deleted", orgName)
 	return
+}
+
+func describeOrganization(cmd *cobra.Command, args []string) {
+	org, err := descOrganization(cmd, args)
+	if err != nil {
+		return
+	}
+	prettyJSON, err := json.MarshalIndent(org, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal org to json", err)
+		return
+	}
+	fmt.Printf("%s\n", prettyJSON)
+	return
+}
+
+func editOrganization(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+
+	eorg := apimgr.Organization{}
+
+	fname := getUniqueID(5)
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	org, err := descOrganization(cmd, args)
+	if err != nil {
+		return
+	}
+	prettyJSON, err := json.MarshalIndent(org, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal org to json", err)
+		return
+	}
+
+	err = createTempFile(fname, prettyJSON)
+	if err != nil {
+		return
+	}
+
+	editedOrg, _ := ioutil.ReadFile("/tmp/" + fname)
+	err = json.Unmarshal(editedOrg, &eorg)
+	if err != nil {
+		fmt.Println("Invalid json object, no changes applied")
+		return
+	}
+	orgVars := &apimgr.OrganizationsIdPutOpts{}
+	orgVars.Body = optional.NewInterface(eorg)
+
+	if eorg.Id != org.Id || eorg.Dn != org.Dn || eorg.CreatedOn != org.CreatedOn {
+		fmt.Println("Organization can't be updated with the changed values")
+		return
+	}
+	if reflect.DeepEqual(org, eorg) {
+		utils.PrettyPrintInfo("Organization %v has no changes to update", eorg.Name)
+		return
+	}
+	nOrg, _, err := client.OrganizationsApi.OrganizationsIdPut(context.Background(), eorg.Id, orgVars)
+	if err != nil {
+		utils.PrettyPrintErr("Error updating Organization")
+		return
+	}
+	utils.PrettyPrintInfo("Organization %v updated with the valid changes", nOrg.Name)
+	deleteTempFile(fname)
+	return
+
 }
 
 func getOrganizationByName(args []string) string {
@@ -210,4 +309,20 @@ func listOrganizations(cmd *cobra.Command, args []string) {
 		utils.PrettyPrintInfo("No Organizations found ")
 		return
 	}
+}
+
+func descOrganization(cmd *cobra.Command, args []string) (apimgr.Organization, error) {
+	cfg := getConfig()
+	orgID := getOrganizationByName(args)
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	org, _, err := client.OrganizationsApi.OrganizationsIdGet(context.Background(), orgID)
+	if err != nil {
+		utils.PrettyPrintErr("Unable to get the Organization: %v", err)
+		return apimgr.Organization{}, err
+	}
+	return org, nil
+
 }

@@ -18,7 +18,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/antihax/optional"
@@ -64,12 +66,25 @@ For example:ß
 apimanager delete api -n <name> `,
 		Run: deleteAPI,
 	}
+
+	apiDescCmd = &cobra.Command{
+		Use:   "api",
+		Short: "Describe an API",
+		Long: `Describe an API from a swagger file. 
+
+For example:ß
+
+# Describe an api using the data 
+apimanager describe api -n <name> `,
+		Run: describeAPI,
+	}
 )
 
 func init() {
 	createCmd.AddCommand(apiCmd)
 	listCmd.AddCommand(apiListCmd)
 	deleteCmd.AddCommand(apiDelCmd)
+	describeCmd.AddCommand(apiDescCmd)
 
 	apiCmd.Flags().StringVarP(&file, "swagger", "f", "", "The filename of the swagger api to be stored")
 	apiCmd.MarkFlagRequired("swagger")
@@ -80,6 +95,9 @@ func init() {
 
 	apiDelCmd.Flags().StringVarP(&apiName, "name", "n", "", "The name to store API name")
 	apiDelCmd.MarkFlagRequired("name")
+
+	apiDescCmd.Flags().StringVarP(&apiName, "name", "n", "", "The name to store API name")
+	apiDescCmd.MarkFlagRequired("name")
 }
 
 func createBackendAPI(cmd *cobra.Command, args []string) {
@@ -173,5 +191,26 @@ func deleteAPI(cmd *cobra.Command, args []string) {
 		return
 	}
 	utils.PrettyPrintInfo("Backend API %v Deleted", apiName)
+	return
+}
+
+func describeAPI(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+	apiID := getAPIByName(args)
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	api, _, err := client.APIRepositoryApi.ApirepoIdGet(context.Background(), apiID)
+	if err != nil {
+		utils.PrettyPrintErr("Unable to delete the backend API: %v", err)
+		return
+	}
+
+	prettyJSON, err := json.MarshalIndent(api, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal to json", err)
+	}
+	fmt.Printf("%s\n", string(prettyJSON))
 	return
 }

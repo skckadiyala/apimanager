@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
+	"reflect"
 
 	"github.com/antihax/optional"
 	"github.com/skckadiyala/apimanager/apimgr"
@@ -51,14 +53,40 @@ var (
 	appDelCmd = &cobra.Command{
 		Use:   "app",
 		Short: "Delete an application",
-		Long: `Delete application from a file. JSON format is accepted. 
+		Long: `Delete application from a file.  
 	
 	For example:
 	
-	# delete user by name
+	# delete application by name
 	apimanager delete app -n <appname> 
 	`,
 		Run: deleteApplication,
+	}
+
+	appDescCmd = &cobra.Command{
+		Use:   "app",
+		Short: "Describe an application",
+		Long: `Describe an application. 
+	
+	For example:
+	
+	# Describe application by name
+	apimanager desc app -n <appname> 
+	`,
+		Run: describeApplication,
+	}
+
+	appEditCmd = &cobra.Command{
+		Use:   "app",
+		Short: "Edit an application",
+		Long: `Edit an application. 
+	
+	For example:
+	
+	# Edit application by name
+	apimanager edit app -n <appname> 
+	`,
+		Run: editApplication,
 	}
 
 	appListCmd = &cobra.Command{
@@ -79,6 +107,8 @@ func init() {
 	createCmd.AddCommand(appCmd)
 	deleteCmd.AddCommand(appDelCmd)
 	listCmd.AddCommand(appListCmd)
+	describeCmd.AddCommand(appDescCmd)
+	editCmd.AddCommand(appEditCmd)
 
 	appCmd.Flags().StringVarP(&file, "file", "f", "", "filename used to create an application resource")
 
@@ -89,6 +119,10 @@ func init() {
 	appDelCmd.Flags().StringVarP(&appName, "name", "n", "", "The name to store application name")
 	appDelCmd.MarkFlagRequired("name")
 
+	appDescCmd.Flags().StringVarP(&appName, "name", "n", "", "The name to store application name")
+	appDescCmd.MarkFlagRequired("name")
+	appEditCmd.Flags().StringVarP(&appName, "name", "n", "", "The name to store application name")
+	appEditCmd.MarkFlagRequired("name")
 }
 
 func createApplication(cmd *cobra.Command, args []string) {
@@ -153,6 +187,71 @@ func deleteApplication(cmd *cobra.Command, args []string) {
 	}
 	utils.PrettyPrintInfo("application %v deleted", appName)
 	return
+}
+
+func describeApplication(cmd *cobra.Command, args []string) {
+
+	app, err := descApplication(cmd, args)
+	prettyJSON, err := json.MarshalIndent(app, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal to json", err)
+	}
+	fmt.Printf("%s\n", string(prettyJSON))
+	return
+}
+
+func editApplication(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+
+	editedApp := apimgr.Application{}
+
+	fname := getUniqueID(5)
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	app, err := descApplication(cmd, args)
+	if err != nil {
+		return
+	}
+	prettyJSON, err := json.MarshalIndent(app, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal org to json", err)
+		return
+	}
+
+	err = createTempFile(fname, prettyJSON)
+	if err != nil {
+		return
+	}
+
+	editedObj, _ := ioutil.ReadFile("/tmp/" + fname)
+	err = json.Unmarshal(editedObj, &editedApp)
+	if err != nil {
+		fmt.Println("Invalid json object, no changes applied")
+		return
+	}
+	appVars := &apimgr.ApplicationsIdPutOpts{}
+	appVars.Body = optional.NewInterface(editedApp)
+
+	if editedApp.Id != app.Id || editedApp.CreatedOn != app.CreatedOn {
+		fmt.Println("Application can't be updated with the changed values")
+		return
+	}
+	// fmt.Println(app)
+	// fmt.Println(editedApp)
+	if reflect.DeepEqual(app, editedApp) {
+		utils.PrettyPrintInfo("Application %v has no changes to update", editedApp.Name)
+		return
+	}
+	updatedApp, _, err := client.ApplicationsApi.ApplicationsIdPut(context.Background(), editedApp.Id, appVars)
+	if err != nil {
+		utils.PrettyPrintErr("Error updating Application")
+		return
+	}
+	utils.PrettyPrintInfo("Application %v updated with the valid changes", updatedApp.Name)
+	deleteTempFile(fname)
+	return
+
 }
 
 func getApplicationByName(args []string) string {
@@ -231,4 +330,20 @@ func reqApplicationAPIAccess(appID, apiID string, cfg *apimgr.Configuration) {
 	}
 
 	utils.PrettyPrintInfo(apiAccess.ApiId)
+}
+
+func descApplication(cmd *cobra.Command, args []string) (apimgr.Application, error) {
+	cfg := getConfig()
+	appID := getApplicationByName(args)
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	app, _, err := client.ApplicationsApi.ApplicationsIdGet(context.Background(), appID)
+	if err != nil {
+		utils.PrettyPrintErr("Unable to get the application: %v", err)
+		return apimgr.Application{}, err
+	}
+
+	return app, nil
 }

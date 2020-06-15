@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"text/tabwriter"
 
 	"git.ecd.axway.int/apigov/kubecrt-vms/utils"
@@ -70,8 +72,35 @@ func getUniqueID(nbofBytes int) string {
 	b := make([]byte, nbofBytes)
 	_, err := rand.Read(b)
 	if err != nil {
-		fmt.Println("Error generating uniqueID: %v ", err)
+		fmt.Printf("Error generating uniqueID: %v \n", err)
 	}
 	uuid := fmt.Sprintf("%x", b[0:nbofBytes])
 	return uuid
+}
+
+func createTempFile(fileName string, content []byte) error {
+	err := ioutil.WriteFile("/tmp/"+fileName, content, 0644)
+	if err != nil {
+		fmt.Println("Failed to write temp file", err)
+		return err
+	}
+	cm := exec.Command("vim", "/tmp/"+fileName)
+	cm.Stdin = os.Stdin
+	cm.Stdout = os.Stdout
+	cm.Stderr = os.Stderr
+
+	err = cm.Run()
+	if err != nil {
+		fmt.Println("Failed to open editor", err)
+		return err
+	}
+	return nil
+}
+func deleteTempFile(fileName string) {
+	cmd := exec.Command("rm", "/tmp/"+fileName)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
 }

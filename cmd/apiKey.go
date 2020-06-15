@@ -126,6 +126,7 @@ func listAPIKeys(cmd *cobra.Command, args []string) {
 	appID := getApplicationByName(args)
 
 	keys, _, err := client.ApplicationsApi.ApplicationsIdApikeysGet(context.Background(), appID)
+
 	if err != nil {
 		utils.PrettyPrintErr("Error listing the apiKeys: %v", err)
 		return

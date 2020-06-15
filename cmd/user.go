@@ -22,7 +22,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
+	"reflect"
 
 	"github.com/antihax/optional"
 	"github.com/skckadiyala/apimanager/apimgr"
@@ -65,6 +67,32 @@ var (
 		Run: deleteUser,
 	}
 
+	userDescCmd = &cobra.Command{
+		Use:   "user",
+		Short: "Describe User",
+		Long: `Describe user from a file. JSON format is accepted. 
+	
+	For example:
+	
+	# Describe user by name
+	apimanager describe user -n username
+	`,
+		Run: describeUser,
+	}
+
+	userEditCmd = &cobra.Command{
+		Use:   "user",
+		Short: "Edit User",
+		Long: `Edit user from a file. JSON format is accepted. 
+	
+	For example:
+	
+	# Edit user by name
+	apimanager edit user -n username
+	`,
+		Run: editUser,
+	}
+
 	userListCmd = &cobra.Command{
 		Use:   "users",
 		Short: "List all users",
@@ -83,6 +111,8 @@ func init() {
 	createCmd.AddCommand(userCmd)
 	deleteCmd.AddCommand(userDelCmd)
 	listCmd.AddCommand(userListCmd)
+	describeCmd.AddCommand(userDescCmd)
+	editCmd.AddCommand(userEditCmd)
 
 	userCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the raw data to be stored")
 	// userCmd.MarkFlagRequired("file")
@@ -100,6 +130,12 @@ func init() {
 
 	userDelCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
 	userDelCmd.MarkFlagRequired("name")
+
+	userDescCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
+	userDescCmd.MarkFlagRequired("name")
+
+	userEditCmd.Flags().StringVarP(&userName, "name", "n", "", "The name of the username")
+	userEditCmd.MarkFlagRequired("name")
 }
 
 func createUser(cmd *cobra.Command, args []string) {
@@ -244,6 +280,68 @@ func deleteUser(cmd *cobra.Command, args []string) {
 	return
 }
 
+func describeUser(cmd *cobra.Command, args []string) {
+	user, err := descUser(cmd, args)
+	prettyJSON, err := json.MarshalIndent(user, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal to json", err)
+	}
+	fmt.Printf("%s\n", string(prettyJSON))
+	return
+}
+
+func editUser(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+
+	editedUser := apimgr.User{}
+
+	fname := getUniqueID(5)
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	user, err := descUser(cmd, args)
+	if err != nil {
+		return
+	}
+	prettyJSON, err := json.MarshalIndent(user, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal org to json", err)
+		return
+	}
+
+	err = createTempFile(fname, prettyJSON)
+	if err != nil {
+		return
+	}
+
+	editedObj, _ := ioutil.ReadFile("/tmp/" + fname)
+	err = json.Unmarshal(editedObj, &editedUser)
+	if err != nil {
+		fmt.Println("Invalid json object, no changes applied")
+		return
+	}
+	userVars := &apimgr.UsersIdPutOpts{}
+	userVars.Body = optional.NewInterface(editedUser)
+
+	if editedUser.Id != user.Id || editedUser.CreatedOn != user.CreatedOn {
+		fmt.Println("User can't be updated with the changed values")
+		return
+	}
+	if reflect.DeepEqual(user, editedUser) {
+		utils.PrettyPrintInfo("User %v has no changes to update", editedUser.Name)
+		return
+	}
+	updatedUser, _, err := client.UsersApi.UsersIdPut(context.Background(), editedUser.Id, userVars)
+	if err != nil {
+		utils.PrettyPrintErr("Error updating User")
+		return
+	}
+	utils.PrettyPrintInfo("User %v updated with the valid changes", updatedUser.Name)
+	deleteTempFile(fname)
+	return
+
+}
+
 func verifyIfUserExists(uEmail, lName string, args []string) bool {
 
 	cfg := getConfig()
@@ -289,4 +387,19 @@ func changeUserPassword(userID, newPassword string, cfg *apimgr.Configuration) {
 	}
 	utils.PrettyPrintInfo("Password updated")
 	return
+}
+
+func descUser(cmd *cobra.Command, args []string) (apimgr.User, error) {
+	cfg := getConfig()
+	userID := getUserByName(args)
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	user, _, err := client.UsersApi.UsersIdGet(context.Background(), userID)
+	if err != nil {
+		utils.PrettyPrintErr("Unable to get the user: %v", err)
+		return apimgr.User{}, err
+	}
+	return user, nil
 }

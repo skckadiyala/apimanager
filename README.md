@@ -36,6 +36,15 @@ apimanager unpublish proxy -n 'The First Avenger'
 apimanager unpublish proxy -n 'The Winter Soldier'
 apimanager unpublish proxy -n 'Civil War'
 
+apimanager describe org -n 'Marvel'
+apimanager describe user -n 'Iron Man'
+apimanager describe app -n Asgard
+apimanager describe api -n 'Captain America'
+apimanager describe proxy -n 'The First Avenger'
+
+apimanager edit org -n 'Marvel'
+apimanager edit user -n 'Iron Man'
+apimanager edit app -n Asgard
 
 apimanager delete proxy -n 'The First Avenger'
 apimanager delete api -n 'Captain America'

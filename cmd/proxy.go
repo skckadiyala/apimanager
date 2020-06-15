@@ -18,8 +18,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/antihax/optional"
@@ -66,8 +68,20 @@ apimanager list proxies `,
 For example:
 
 # Delete a proxy 
-apimanager dlete proxy -n <ProxyName> `,
+apimanager delete proxy -n <ProxyName> `,
 		Run: deleteProxy,
+	}
+
+	proxyDescribe = &cobra.Command{
+		Use:   "proxy",
+		Short: "Describe a proxy",
+		Long: `Describe a proxy by name. 
+
+For example:
+
+# Describe a proxy 
+apimanager describe proxy -n <ProxyName> `,
+		Run: describeProxy,
 	}
 )
 
@@ -75,9 +89,13 @@ func init() {
 	createCmd.AddCommand(proxyCmd)
 	listCmd.AddCommand(proxyList)
 	deleteCmd.AddCommand(proxyDelete)
+	describeCmd.AddCommand(proxyDescribe)
 
 	proxyDelete.Flags().StringVarP(&name, "name", "n", "", "proxy name")
 	proxyDelete.MarkFlagRequired("name")
+
+	proxyDescribe.Flags().StringVarP(&name, "name", "n", "", "proxy name")
+	proxyDescribe.MarkFlagRequired("name")
 
 	proxyCmd.Flags().StringVarP(&file, "file", "f", "", "The filename of the swagger api to be stored")
 
@@ -252,5 +270,34 @@ func deleteProxy(cmd *cobra.Command, args []string) {
 		return
 	}
 	utils.PrettyPrintInfo("Proxy %v Deleted", name)
+	return
+}
+
+func describeProxy(cmd *cobra.Command, args []string) {
+	cfg := getConfig()
+
+	proxy, err := getProxyByName(args, cfg)
+	if err != nil {
+		utils.PrettyPrintErr("unable to find the proxy : %v", err)
+		return
+	}
+	// if proxy.State == "published" {
+	// 	fmt.Printf("Unable to Delete, Proxy %v is in published state \n", proxy.Name)
+	// 	return
+	// }
+
+	client := &apimgr.APIClient{}
+	client = apimgr.NewAPIClient(cfg)
+
+	proxy, _, err = client.APIProxyRegistrationApi.ProxiesIdGet(context.Background(), proxy.Id)
+	if err != nil {
+		utils.PrettyPrintErr("Unable to get the Proxy: %v", err)
+		return
+	}
+	prettyJSON, err := json.MarshalIndent(proxy, "", "    ")
+	if err != nil {
+		log.Fatal("Failed to marshal to json", err)
+	}
+	fmt.Printf("%s\n", string(prettyJSON))
 	return
 }
