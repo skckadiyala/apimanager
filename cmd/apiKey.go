@@ -29,7 +29,6 @@ import (
 // apiKeyCmd represents the apiKey command
 var (
 	keyCmd = &cobra.Command{
-		Hidden:  true,
 		Use:     "key",
 		Aliases: []string{"apikeys"},
 		Short:   "Create an APIKey",
